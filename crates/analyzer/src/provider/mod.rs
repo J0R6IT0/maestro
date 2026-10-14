@@ -3,6 +3,12 @@ use anyhow::Result;
 
 pub mod subsonic;
 
+const USER_AGENT: &str = concat!(
+    "maestro/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/J0R6IT0/maestro)"
+);
+
 pub fn connect(config: &ProviderConfig) -> Result<Box<dyn Provider>> {
     Ok(match config {
         ProviderConfig::Subsonic(settings) => Box::new(subsonic::Subsonic::new(settings.clone())?),

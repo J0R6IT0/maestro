@@ -8,7 +8,21 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check tag matches Cargo.toml
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [[ "$version" != "${GITHUB_REF_NAME#v}" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          fi
+
   image:
+    needs: version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,6 +75,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.backend }}
 
   plugin:
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

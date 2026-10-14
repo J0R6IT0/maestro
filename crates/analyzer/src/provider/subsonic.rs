@@ -1,4 +1,4 @@
-use super::{Album, ArtistRef, Library, Provider, Track};
+use super::{Album, ArtistRef, Library, Provider, Track, USER_AGENT};
 use anyhow::{Context, Result, bail};
 use common::env;
 use reqwest::{
@@ -45,7 +45,10 @@ impl Subsonic {
     pub fn new(settings: Settings) -> Result<Self> {
         let base = Url::parse(&format!("{}/rest/", settings.url.trim_end_matches('/')))
             .context("invalid SUBSONIC_URL")?;
-        let http = Client::builder().timeout(TIMEOUT).build()?;
+        let http = Client::builder()
+            .user_agent(USER_AGENT)
+            .timeout(TIMEOUT)
+            .build()?;
 
         Ok(Self {
             settings,
