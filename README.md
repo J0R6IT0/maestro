@@ -18,7 +18,7 @@ There is no UI and no extra features. If you need more advanced features, such a
 4. Start the container. It should perform the initial scan which may take a few days depending on your library size and hardware.
 
 > [!TIP]
-> Create a custom transcoding in Navidrome to speed up downloads. It converts tracks to 16 kHz mono FLAC, which is what MAEST uses.
+> Create a custom transcoding in Navidrome to (slightly) reduce CPU usage and speed up downloads. It converts tracks to 16 kHz mono FLAC, which is what MAEST uses.
 >
 > 1. In Navidrome, add a new transcoding with any name, any default bitrate, and a **target format** of your choice (e.g. `maestro-flac`).
 > 2. Use this command:
@@ -27,7 +27,7 @@ There is no UI and no extra features. If you need more advanced features, such a
 >    ```
 > 3. Set maestro's `SUBSONIC_FORMAT` env variable to **the target format** you chose, e.g. `SUBSONIC_FORMAT=maestro-flac`.
 >
-> Without a custom transcoding the default `opus` works too, but uses slightly more CPU.
+> The default `opus` works too, but encoding Opus costs more CPU, and maestro must convert it again.
 
 ### Navidrome plugin
 
