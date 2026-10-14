@@ -99,8 +99,9 @@ WORKDIR /app
 
 RUN mkdir models \
     && for ext in onnx json; do \
-    curl -fsSLo models/discogs-maest-30s-pw-519l-2.$ext \
-    https://essentia.upf.edu/models/feature-extractors/maest/discogs-maest-30s-pw-519l-2.$ext; \
+    curl -fsSL --retry 5 --retry-all-errors --connect-timeout 30 \
+    -o models/discogs-maest-30s-pw-519l-2.$ext \
+    https://essentia.upf.edu/models/feature-extractors/maest/discogs-maest-30s-pw-519l-2.$ext || exit 1; \
     done
 
 RUN useradd --system --uid 10001 --home-dir /data maestro \
