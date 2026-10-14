@@ -99,7 +99,7 @@ pub fn album(
         changed,
         tracks_added,
         tracks_updated: changes.tracks.len() - tracks_added,
-        pending: unanalyzed_tracks(conn, &wanted.track_ids)?,
+        pending: pending_tracks(conn, &wanted.track_ids)?,
     })
 }
 
@@ -310,11 +310,13 @@ fn same_artists(stored: Option<&BTreeSet<String>>, wanted: &BTreeSet<&str>) -> b
         .eq(wanted.iter().copied())
 }
 
-fn unanalyzed_tracks(conn: &mut SqliteConnection, track_ids: &[&str]) -> Result<Vec<Track>> {
-    let mut unanalyzed: Vec<Track> = tracks::table
+fn pending_tracks(conn: &mut SqliteConnection, track_ids: &[&str]) -> Result<Vec<Track>> {
+    let mut pending: Vec<Track> = tracks::table
         .filter(tracks::id.eq_any(track_ids))
         .filter(not(exists(
-            analyses::table.filter(analyses::track_id.eq(tracks::id)),
+            analyses::table
+                .filter(analyses::track_id.eq(tracks::id))
+                .filter(analyses::error.is_null()),
         )))
         .select(Track::as_select())
         .load(conn)?;
@@ -323,8 +325,8 @@ fn unanalyzed_tracks(conn: &mut SqliteConnection, track_ids: &[&str]) -> Result<
         .enumerate()
         .map(|(i, id)| (*id, i))
         .collect();
-    unanalyzed.sort_by_key(|t| position[t.id.as_str()]);
-    Ok(unanalyzed)
+    pending.sort_by_key(|t| position[t.id.as_str()]);
+    Ok(pending)
 }
 
 pub fn stored_albums(
