@@ -1,0 +1,28 @@
+[package]
+name = "analyzer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+common.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+crossbeam-channel.workspace = true
+diesel.workspace = true
+dotenvy.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+md5.workspace = true
+ndarray.workspace = true
+ort.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+rustfft.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+cuda = ["ort/cuda"]
+openvino = ["ort/openvino"]

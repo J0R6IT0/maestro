@@ -1,0 +1,72 @@
+# maestro
+
+Experimental music sonic similarity engine for Navidrome (and other OpenSubsonic servers), based on [MAEST](https://essentia.upf.edu/models.html#maest) embeddings.
+
+maestro is made to be as simple and lightweight as possible, providing only the basic features the average listener needs. Currently, that means the features the OpenSubsonic's [sonic similarity extension](https://opensubsonic.netlify.app/docs/extensions/sonicsimilarity/) supports: similar tracks and path between two songs.
+
+It can handle very large music libraries efficiently and supports CUDA and OpenVINO GPU acceleration.
+
+There is no UI and no extra features. If you need more advanced features, such as lyrics analysis or AI-based playlist generation, it is recommended to use [AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI) instead.
+
+## Setup
+
+### Service
+
+1. Install docker.
+2. Grab the latest `docker-compose.yml` file from the [releases page](https://github.com/J0R6IT0/maestro/releases).
+3. See the [configuration](#configuration) section for the available environment variables.
+4. Start the container. It should perform the initial scan which may take a few days depending on your library size and hardware.
+
+> [!TIP]
+> It is recommended to create a custom transcoding in Navidrome to make downloads faster. The following command will transcode to 16 kHz mono FLAC, exactly what MAEST uses:
+>
+> `ffmpeg -i %s -ss %t -map 0:a:0 -v 0 -ac 1 -ar 16000 -sample_fmt s16 -c:a flac -compression_level 0 -f flac pipe:1`
+>
+> Give it a name such as `maest` and any default bitrate (doesn't matter). Don't forget to set it in the `SUBSONIC_FORMAT` env variable.
+>
+> If you don't want to create a custom transcoding, you can use the default `opus` too, although transcoding to opus is a slightly more CPU intensive.
+
+### Navidrome plugin
+
+1. Download the latest `maestro.ndp` file from the [releases page](https://github.com/J0R6IT0/maestro/releases).
+2. Place the `maestro.ndp` file in the Navidrome plugins directory.
+3. If `Plugins.AutoReload` is disabled, restart Navidrome.
+4. Enable the plugin and specify the server address.
+
+## Configuration
+
+The following environment variables can be added to the compose file or to a .env if running outside docker.
+
+| Variable | Default | Values | Description |
+|---|---|---|---|
+| `TZ` | `UTC` | [time zone](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), e.g. `Europe/Madrid` | Time zone of `ANALYZE_CRON`. Docker only. |
+| `ANALYZE_CRON` | `0 2 * * *` | cron expression | When the analyzer runs, after a first pass at startup. Docker only. |
+| `PROVIDER` | `subsonic` | `subsonic` | Your music library provider. |
+| `SUBSONIC_URL` | required | URL | Address of the OpenSubsonic server. |
+| `SUBSONIC_USER` | required | | User to log in with. |
+| `SUBSONIC_PASSWORD` | required | | Password of that user. |
+| `SUBSONIC_FORMAT` | `opus` | any format the server transcodes to | Format the server transcodes tracks to before they are analyzed. |
+| `DOWNLOAD_WORKERS` | `4` | number | Parallel downloads and decodes. |
+| `EXCLUDED_LIBRARIES` | none | comma-separated names or ids | Libraries to not analyze and leave out of results (e.g. `Audiobooks, Podcasts`). |
+| `DEDUP_STRATEGY` | `title+artist` | `title+artist`, `title`, `off` | Which tracks count as duplicates by title: same title and a shared artist, same title only, or none. Tracks with the same audio are always duplicates. |
+| `DEDUP_LEVEL` | `recording` | `recording`, `song` | How alike duplicates by title must sound: the same recording (remasters, edits, compilation copies), or any version of the song (also remixes, live takes). Note that `title` strategy with `song` level may also merge unrelated songs that share a common title. |
+| `MAX_DURATION_INCREASE` | no limit | percentage, e.g. `50%` | Exclude from results tracks longer than the seed by more than this (for `/path`, than the longer of the two). |
+| `LOG_LEVEL` | `info,ort=warn` | `error`, `warn`, `info`, `debug`, `trace` or a [filter](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) | Log verbosity. |
+
+## How it works
+
+There are 2 main components: the analyzer and the server.
+
+### Analyzer
+
+1. Each time the analyzer runs (`ANALYZE_CRON`), it syncs the library, updates metadata and analyzes new tracks.
+2. Each track is decoded and processed by the MAEST model. The model produces a 2304-d embedding that describes the sound. Tracks that sound alike get embeddings that point in a similar direction, so their distance is small.
+3. Every new embedding is compared with all the others and the 100 nearest neighbors are stored.
+4. The analyzer also writes a search index (`maestro.search`) next to the database. It stores each track's embedding compressed to 128 numbers (its position along the library's 128 most important directions) and links to the 16 nearest neighbors. Tracks that sound alike are stored close to each other, so on large libraries, getting a path only reads a small part of the file.
+
+### Server
+
+The server exposes two endpoints:
+
+- `/similar` reads the nearest-neighbor index built in [step 3 of the Analyzer](#analyzer) and returns up to 100 similar tracks.
+- `/path` returns a path up to N songs between two tracks using the search index built in [step 4 of the Analyzer](#analyzer). A path from song A to song B follows the neighbor links. It first finds the chain of links between A and B with the smallest steps, then evenly spaces N points along that chain and picks one track near each point, choosing them together so that every step is small and about the same size.

@@ -1,0 +1,10 @@
+/target
+/models
+.env
+*.db
+*.db-shm
+*.db-wal
+/dist
+*.search
+*.search.tmp
+maestro.lock

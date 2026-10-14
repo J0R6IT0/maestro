@@ -1,0 +1,34 @@
+name: maestro
+
+services:
+  maestro:
+    # For GPU acceleration, add one of -[cuda, openvino] to the image tag.
+    # For example: ghcr.io/j0r6it0/maestro:latest-cuda
+    # Then uncomment the appropriate section below.
+    image: ghcr.io/j0r6it0/maestro:latest
+    restart: unless-stopped
+    environment:
+      SUBSONIC_URL: http://192.168.1.10:4533
+      SUBSONIC_USER: admin
+      SUBSONIC_PASSWORD: password
+      TZ: UTC
+      ANALYZE_CRON: "0 2 * * *"
+    ports:
+      - "3000:3000"
+    volumes:
+      - maestro-data:/data
+    # UNCOMMENT FOR CUDA
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    #
+    # UNCOMMENT FOR OPENVINO
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+volumes:
+  maestro-data:

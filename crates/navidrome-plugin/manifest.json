@@ -1,0 +1,25 @@
+{
+  "name": "maestro",
+  "author": "Jorge Pardo",
+  "version": "CHANGED_BY_WF",
+  "description": "Sonic similarity from MAEST embeddings.",
+  "config": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "title": "maestro server URL",
+          "description": "Base URL of the maestro server",
+          "default": "http://localhost:3000"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "http": {
+      "reason": "Query the maestro server",
+      "requiredHosts": ["*"]
+    }
+  }
+}

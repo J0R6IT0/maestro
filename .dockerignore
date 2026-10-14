@@ -1,0 +1,8 @@
+/target
+/models
+/dist
+.git
+.env
+*.db
+*.db-shm
+*.db-wal
