@@ -33,6 +33,11 @@ There is no UI and no extra features. If you need more advanced features, such a
 3. If `Plugins.AutoReload` is disabled, restart Navidrome.
 4. Enable the plugin and specify the server address.
 
+The plugin works in two modes, which can be used together:
+
+- **Sonic similarity**: implements the OpenSubsonic [sonic similarity extension](https://opensubsonic.netlify.app/docs/extensions/sonicsimilarity/) (`getSonicSimilarTracks` and `findSonicPath`), used by clients that support it. It doesn't require any configuration.
+- **Similar tracks**: for the standard `getSimilarSongs` endpoint, so clients without the extension also get sonically similar tracks. It requires adding `maestro` to the Navidrome [`Agents`](https://www.navidrome.org/docs/usage/configuration-options/) option (`ND_AGENTS` env variable). Agents are tried in order and the first one that returns tracks wins, so put it first to prefer maestro and fall back to the others for tracks it hasn't analyzed yet, e.g. `ND_AGENTS=maestro,deezer,lastfm,listenbrainz`.
+
 ## Configuration
 
 The following environment variables can be added to the compose file or to a .env if running outside docker.
