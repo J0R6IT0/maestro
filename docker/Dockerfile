@@ -3,7 +3,7 @@
 ARG BACKEND=cpu
 
 ARG UBUNTU_IMAGE=ubuntu:24.04
-ARG CUDA_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
+ARG CUDA_IMAGE=nvidia/cuda:13.0.3-base-ubuntu24.04
 
 FROM ${UBUNTU_IMAGE} AS toolchain
 
@@ -69,6 +69,32 @@ RUN curl -fsSLo /tmp/ort.whl "$ORT_OPENVINO_URL" \
 
 FROM ${BACKEND}-libs AS libs
 
+FROM ${UBUNTU_IMAGE} AS ffmpeg
+
+ARG FFMPEG_VERSION=9.0.2
+ARG FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates curl nasm pkg-config xz-utils \
+    zlib1g-dev libbz2-dev libopenmpt-dev libgme-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSLo /tmp/ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \
+    && echo "$FFMPEG_SHA256  /tmp/ffmpeg.tar.xz" | sha256sum -c - \
+    && mkdir /tmp/ffmpeg \
+    && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 \
+    && cd /tmp/ffmpeg \
+    && ./configure --disable-autodetect --enable-pthreads --disable-debug --disable-doc --disable-network \
+    --disable-ffplay --disable-ffprobe --disable-avdevice --disable-devices --disable-hwaccels \
+    --disable-encoders --enable-encoder=pcm_f32le \
+    --disable-muxers --enable-muxer=pcm_f32le \
+    --disable-protocols --enable-protocol=file,pipe \
+    --disable-filters --enable-filter=abuffer,abuffersink,aformat,anull,aresample,atrim \
+    --enable-zlib --enable-bzlib --enable-libopenmpt --enable-libgme \
+    && make -j"$(nproc)" ffmpeg \
+    && install -D -s ffmpeg /out/ffmpeg \
+    && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz
+
 FROM toolchain AS build
 
 ARG BACKEND
@@ -92,6 +118,11 @@ FROM ${UBUNTU_IMAGE} AS runtime-cpu
 
 FROM ${CUDA_IMAGE} AS runtime-cuda
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    libcublas-13-0=13.1.1.3-1 libcurand-13-0=10.4.0.35-1 cuda-nvrtc-13-0=13.0.88-1 libcudnn9-cuda-13=9.24.1.1-1 \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM ${UBUNTU_IMAGE} AS runtime-openvino
 
 RUN apt-get update \
@@ -102,8 +133,10 @@ FROM runtime-${BACKEND} AS maestro
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ffmpeg curl ca-certificates procps tzdata \
+    curl ca-certificates procps tzdata libopenmpt0t64 libgme0 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ffmpeg /out/ffmpeg /usr/local/bin/
 
 ARG SUPERCRONIC_VERSION=v0.2.49
 ARG SUPERCRONIC_SHA256=a53ae236602c7338aba3fbaff40bda6300eae3b9fedb8261eb06cfe3724430c1
