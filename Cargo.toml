@@ -24,7 +24,7 @@ md5 = "0.8"
 memmap2 = "0.9"
 ndarray = "0.17"
 percent-encoding = "2"
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"] }
+ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "ndarray", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"] }
 rand = "0.10"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
 rustfft = "6"

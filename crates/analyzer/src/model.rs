@@ -1,6 +1,7 @@
 use crate::audio::{BANDS, Decoder, PATCH_FRAMES, Patches};
 use anyhow::{Context, Result, anyhow, bail};
 use ort::{
+    environment::Environment,
     ep::ExecutionProviderDispatch,
     session::{OutputSelector, RunOptions, Session},
     value::{Outlet, TensorRef},
@@ -43,7 +44,8 @@ impl Model {
             .context("model path has no file name")?
             .to_string_lossy()
             .into_owned();
-        let session = create_session(path)?;
+        let env = ort::init().build()?;
+        let session = create_session(&env, path)?;
         check_graph(&session)?;
 
         let mut model = Self {
@@ -152,30 +154,34 @@ fn add_patch_embedding(embedding: &mut Vec<f32>, tokens: &[f32], dim: usize, pat
 }
 
 #[cfg(not(feature = "openvino"))]
-fn create_session(path: &Path) -> Result<Session> {
+fn create_session(env: &Environment, path: &Path) -> Result<Session> {
     #[cfg(feature = "cuda")]
     let providers = [ort::ep::CUDA::default().build().error_on_failure()];
     #[cfg(not(feature = "cuda"))]
     let providers: [ExecutionProviderDispatch; 0] = [];
-    load_session(path, &providers)
+    load_session(env, path, &providers)
 }
 
 #[cfg(feature = "openvino")]
-fn create_session(path: &Path) -> Result<Session> {
+fn create_session(env: &Environment, path: &Path) -> Result<Session> {
     let openvino = |device: &str| {
         [ort::ep::OpenVINO::default()
             .with_device_type(device)
             .build()
             .error_on_failure()]
     };
-    load_session(path, &openvino("GPU")).or_else(|e| {
+    load_session(env, path, &openvino("GPU")).or_else(|e| {
         tracing::warn!("no Intel GPU found, OpenVINO will run on the CPU: {e:#}");
-        load_session(path, &openvino("CPU"))
+        load_session(env, path, &openvino("CPU"))
     })
 }
 
-fn load_session(path: &Path, providers: &[ExecutionProviderDispatch]) -> Result<Session> {
-    Session::builder()?
+fn load_session(
+    env: &Environment,
+    path: &Path,
+    providers: &[ExecutionProviderDispatch],
+) -> Result<Session> {
+    Session::builder(env)?
         .with_execution_providers(providers)
         .map_err(|e| anyhow!("registering {EXECUTION_PROVIDER}: {e}"))?
         .commit_from_file(path)
