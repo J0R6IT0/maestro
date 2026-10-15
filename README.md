@@ -17,18 +17,6 @@ There is no UI and no extra features. If you need more advanced features, such a
 3. See the [configuration](#configuration) section for the available environment variables.
 4. Start the container. It should perform the initial scan which may take a few days depending on your library size and hardware.
 
-> [!TIP]
-> Create a custom transcoding in Navidrome to (slightly) reduce CPU usage and speed up downloads. It converts tracks to 16 kHz mono FLAC, which is what MAEST uses.
->
-> 1. In Navidrome, add a new transcoding with any name, any default bitrate, and a **target format** of your choice (e.g. `maestro-flac`).
-> 2. Use this command:
->    ```
->    ffmpeg -i %s -ss %t -map 0:a:0 -v 0 -ac 1 -ar 16000 -sample_fmt s16 -c:a flac -compression_level 0 -f flac pipe:1
->    ```
-> 3. Set maestro's `SUBSONIC_FORMAT` env variable to **the target format** you chose, e.g. `SUBSONIC_FORMAT=maestro-flac`.
->
-> The default `opus` works too, but encoding Opus costs more CPU, and maestro must convert it again.
-
 ### Navidrome plugin
 
 1. Download the latest `maestro.ndp` file from the [releases page](https://github.com/J0R6IT0/maestro/releases).
@@ -53,7 +41,7 @@ The following environment variables can be added to the compose file or to a .en
 | `SUBSONIC_URL` | required | URL | Address of the OpenSubsonic server. |
 | `SUBSONIC_USER` | required | | User to log in with. |
 | `SUBSONIC_PASSWORD` | required | | Password of that user. |
-| `SUBSONIC_FORMAT` | `opus` | any format the server transcodes to | Format the server transcodes tracks to before they are analyzed. |
+| `SUBSONIC_FORMAT` | `opus` | any format the server transcodes to | Format the server transcodes tracks to before they are analyzed. Only used if the server doesn't support the OpenSubsonic [transcoding](https://opensubsonic.netlify.app/docs/extensions/transcoding/) extension. |
 | `DOWNLOAD_WORKERS` | `4` | number | Parallel downloads and decodes. |
 | `EXCLUDED_LIBRARIES` | none | comma-separated names or ids | Libraries to not analyze and leave out of results (e.g. `Audiobooks, Podcasts`). |
 | `DEDUP_STRATEGY` | `title+artist` | `title+artist`, `title`, `off` | Which tracks count as duplicates by title: same title and a shared artist, same title only, or none. Tracks with the same audio are always duplicates. |

@@ -1,20 +1,54 @@
-use super::{Album, ArtistRef, Library, Provider, Track, USER_AGENT};
+use super::{Album, ArtistRef, CLIENT_NAME, Library, Provider, Track, USER_AGENT};
 use anyhow::{Context, Result, bail};
 use common::env;
 use reqwest::{
-    Url,
-    blocking::{Client, Response},
+    StatusCode, Url,
+    blocking::{Client, RequestBuilder, Response},
     header::CONTENT_TYPE,
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
-use serde_json::Value;
-use std::time::Duration;
+use serde_json::{Value, json};
+use std::{
+    sync::{LazyLock, OnceLock},
+    time::Duration,
+};
+use tracing::info;
 
 const API_VERSION: &str = "1.16.1";
-const CLIENT_NAME: &str = "maestro";
 const TIMEOUT: Duration = Duration::from_secs(300);
 const ALBUM_PAGE: usize = 500;
-const OPUS_KBPS: &str = "128";
+const OPUS_KBPS: u32 = 128;
+
+static CLIENT_INFO: LazyLock<Value> = LazyLock::new(|| {
+    json!({
+        "name": CLIENT_NAME,
+        "platform": std::env::consts::OS,
+        "directPlayProfiles": [
+            { "containers": [], "audioCodecs": ["mp3", "aac", "opus", "vorbis"], "protocols": ["http"] }
+        ],
+        "transcodingProfiles": [
+            { "container": "flac", "audioCodec": "flac", "protocol": "http", "maxAudioChannels": 1 },
+            { "container": "opus", "audioCodec": "opus", "protocol": "http", "maxAudioChannels": 1 }
+        ],
+        "codecProfiles": [
+            {
+                "type": "AudioCodec",
+                "name": "flac",
+                "limitations": [
+                    { "name": "audioSamplerate", "comparison": "LessThanEqual", "values": ["16000"], "required": true },
+                    { "name": "audioBitdepth", "comparison": "LessThanEqual", "values": ["16"], "required": true }
+                ]
+            },
+            {
+                "type": "AudioCodec",
+                "name": "opus",
+                "limitations": [
+                    { "name": "audioBitrate", "comparison": "LessThanEqual", "values": [(OPUS_KBPS * 1000).to_string()], "required": false }
+                ]
+            }
+        ]
+    })
+});
 
 #[derive(Clone)]
 pub struct Settings {
@@ -39,6 +73,7 @@ pub struct Subsonic {
     settings: Settings,
     base: Url,
     http: Client,
+    transcoding: OnceLock<bool>,
 }
 
 impl Subsonic {
@@ -54,6 +89,7 @@ impl Subsonic {
             settings,
             base,
             http,
+            transcoding: OnceLock::new(),
         })
     }
 
@@ -81,17 +117,19 @@ impl Subsonic {
         url
     }
 
-    fn get(&self, endpoint: &str, params: &[(&str, &str)]) -> reqwest::Result<Response> {
-        self.http
-            .get(self.url(endpoint, params))
+    fn send(request: RequestBuilder) -> reqwest::Result<Response> {
+        request
             .send()
             .and_then(|r| r.error_for_status())
             .map_err(|e| e.without_url())
     }
 
     fn call(&self, endpoint: &'static str, params: &[(&str, &str)]) -> Result<Value> {
-        let mut body: Value = self
-            .get(endpoint, params)
+        Self::execute(endpoint, self.http.get(self.url(endpoint, params)))
+    }
+
+    fn execute(endpoint: &'static str, request: RequestBuilder) -> Result<Value> {
+        let mut body: Value = Self::send(request)
             .and_then(|r| r.json().map_err(|e| e.without_url()))
             .with_context(|| format!("{endpoint} request failed"))?;
 
@@ -105,6 +143,94 @@ impl Subsonic {
             Some(_) => Err(ApiError::new(endpoint, &response).into()),
             None => bail!("{endpoint}: not a Subsonic response"),
         }
+    }
+
+    fn download(&self, endpoint: &'static str, params: &[(&str, &str)]) -> Result<Vec<u8>> {
+        let response = Self::send(self.http.get(self.url(endpoint, params)))
+            .with_context(|| format!("{endpoint} request failed"))?;
+
+        let is_error = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .is_some_and(|v| v.as_bytes().starts_with(b"application/json"));
+        let body = response
+            .bytes()
+            .map_err(|e| e.without_url())
+            .with_context(|| format!("{endpoint} download failed"))?;
+        if is_error {
+            let error: Value = serde_json::from_slice(&body).unwrap_or_default();
+            return Err(ApiError::new(endpoint, &error["subsonic-response"]).into());
+        }
+        Ok(body.to_vec())
+    }
+
+    fn supports_transcoding(&self) -> Result<bool> {
+        if let Some(&supported) = self.transcoding.get() {
+            return Ok(supported);
+        }
+        let supported = match self.call("getOpenSubsonicExtensions", &[]) {
+            Ok(mut response) => take_list::<Extension>(&mut response, "/openSubsonicExtensions")
+                .is_ok_and(|extensions| extensions.iter().any(|e| e.name == "transcoding")),
+            Err(e) if is_unsupported(&e) => false,
+            Err(e) => return Err(e),
+        };
+        if self.transcoding.set(supported).is_ok() {
+            if supported {
+                info!("server supports the transcoding extension");
+            } else {
+                info!(
+                    "server lacks the transcoding extension, streaming as {}",
+                    self.settings.format
+                );
+            }
+        }
+        Ok(supported)
+    }
+
+    fn fetch_transcoded(&self, track_id: &str) -> Result<Vec<u8>> {
+        let media = [("mediaId", track_id), ("mediaType", "song")];
+        let request = self
+            .http
+            .post(self.url("getTranscodeDecision", &media))
+            .json(&*CLIENT_INFO);
+        let mut response = Self::execute("getTranscodeDecision", request)?;
+        let decision: TranscodeDecision =
+            take(&mut response, "getTranscodeDecision", "transcodeDecision")?;
+
+        let Some(params) = decision
+            .transcode_params
+            .filter(|_| decision.can_direct_play || decision.can_transcode)
+        else {
+            bail!(
+                "getTranscodeDecision: {}",
+                decision
+                    .error_reason
+                    .filter(|r| !r.is_empty())
+                    .as_deref()
+                    .unwrap_or("no compatible format")
+            );
+        };
+        self.download(
+            "getTranscodeStream",
+            &[
+                ("mediaId", track_id),
+                ("mediaType", "song"),
+                ("transcodeParams", &params),
+            ],
+        )
+    }
+
+    fn fetch_stream(&self, track_id: &str) -> Result<Vec<u8>> {
+        let kbps = OPUS_KBPS.to_string();
+        let mut params = vec![
+            ("id", track_id),
+            ("format", self.settings.format.as_str()),
+            ("estimateContentLength", "false"),
+        ];
+        if self.settings.format == "opus" {
+            params.push(("maxBitRate", &kbps));
+        }
+        self.download("stream", &params)
     }
 }
 
@@ -164,41 +290,33 @@ impl Provider for Subsonic {
             Err(e) if ApiError::is_not_found(&e) => return Ok(None),
             response => response?,
         };
-        let album = response
-            .get_mut("album")
-            .map(Value::take)
-            .context("getAlbum: no album in the response")?;
-        let album: SubsonicAlbum = serde_json::from_value(album).context("getAlbum")?;
+        let album: SubsonicAlbum = take(&mut response, "getAlbum", "album")?;
         Ok(Some(album.into()))
     }
 
     fn fetch_audio(&self, track_id: &str) -> Result<Vec<u8>> {
-        let mut params = vec![
-            ("id", track_id),
-            ("format", self.settings.format.as_str()),
-            ("estimateContentLength", "false"),
-        ];
-        if self.settings.format == "opus" {
-            params.push(("maxBitRate", OPUS_KBPS));
+        if self.supports_transcoding()? {
+            self.fetch_transcoded(track_id)
+        } else {
+            self.fetch_stream(track_id)
         }
-        let response = self
-            .get("stream", &params)
-            .context("stream request failed")?;
-
-        let is_error = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .is_some_and(|v| v.as_bytes().starts_with(b"application/json"));
-        let body = response
-            .bytes()
-            .map_err(|e| e.without_url())
-            .context("stream download failed")?;
-        if is_error {
-            let error: Value = serde_json::from_slice(&body).unwrap_or_default();
-            return Err(ApiError::new("stream", &error["subsonic-response"]).into());
-        }
-        Ok(body.to_vec())
     }
+}
+
+#[derive(Deserialize)]
+struct Extension {
+    name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscodeDecision {
+    #[serde(default)]
+    can_direct_play: bool,
+    #[serde(default)]
+    can_transcode: bool,
+    transcode_params: Option<String>,
+    error_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -302,6 +420,22 @@ impl From<Song> for Track {
             artists,
         }
     }
+}
+
+fn is_unsupported(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<ApiError>().is_some()
+        || error
+            .downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            == Some(StatusCode::NOT_FOUND)
+}
+
+fn take<T: DeserializeOwned>(response: &mut Value, endpoint: &'static str, key: &str) -> Result<T> {
+    let value = response
+        .get_mut(key)
+        .map(Value::take)
+        .with_context(|| format!("{endpoint}: no {key} in the response"))?;
+    serde_json::from_value(value).context(endpoint)
 }
 
 fn take_list<T: DeserializeOwned>(response: &mut Value, pointer: &str) -> Result<Vec<T>> {

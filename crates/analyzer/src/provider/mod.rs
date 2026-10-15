@@ -8,6 +8,7 @@ const USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (https://github.com/J0R6IT0/maestro)"
 );
+const CLIENT_NAME: &str = "maestro";
 
 pub fn connect(config: &ProviderConfig) -> Result<Box<dyn Provider>> {
     Ok(match config {
