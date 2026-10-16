@@ -1,12 +1,12 @@
 use crate::{
-    audio::{self, Decoder, Patches},
+    audio::{self, MelPatches, PatchExtractor},
     config::{Config, MODEL_PATH},
     index,
     model::{Analysis, Model},
     provider::{self, Provider},
     store, sync,
 };
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use common::db::{Pool, models::Track};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use std::{
@@ -20,6 +20,7 @@ use std::{
     thread,
     time::Instant,
 };
+use tempfile::NamedTempFile;
 use tracing::{debug, error, info, info_span, warn};
 
 const ALBUM_WORKERS: usize = 4;
@@ -35,7 +36,7 @@ struct ListedAlbum {
 
 struct Decoded {
     track: Track,
-    patches: Result<Patches>,
+    patches: Result<MelPatches>,
 }
 
 #[derive(Default)]
@@ -68,6 +69,7 @@ impl Pass {
 pub fn run(config: &Config, pool: &Pool) -> Result<()> {
     let started = Instant::now();
     audio::check_ffmpeg()?;
+    audio::remove_stale_temp_files();
     let provider = provider::connect(&config.provider)?;
     let pass = Pass::default();
 
@@ -238,30 +240,38 @@ fn sync_album(
 }
 
 fn decode_tracks(provider: &dyn Provider, pending: Receiver<Track>, decoded: Sender<Decoded>) {
-    let decoder = Decoder::new();
+    let extractor = PatchExtractor::new();
     for track in pending {
         let _span = info_span!("track", id = %track.id).entered();
         let started = Instant::now();
-        let file = match provider.fetch_audio(&track.id) {
-            Ok(file) => file,
+        let (file, bytes) = match download(provider, &track.id) {
+            Ok(downloaded) => downloaded,
             Err(e) => {
                 warn!("download failed, will retry next pass: {e:#}");
                 continue;
             }
         };
-        let (bytes, downloaded) = (file.len(), started.elapsed());
-        let patches = decoder.decode(file);
+        let downloaded = started.elapsed();
+        let patches =
+            extractor.extract_patches(file.path(), track.duration.try_into().unwrap_or(0));
+        drop(file);
         debug!(
             bytes,
             download_ms = downloaded.as_millis(),
             decode_ms = (started.elapsed() - downloaded).as_millis(),
-            patches = patches.as_ref().map_or(0, |p| p.count),
+            patches = patches.as_ref().map_or(0, |p| p.patch_count),
             "decoded"
         );
         if decoded.send(Decoded { track, patches }).is_err() {
             return;
         }
     }
+}
+
+fn download(provider: &dyn Provider, track_id: &str) -> Result<(NamedTempFile, u64)> {
+    let mut file = audio::create_temp_file().context("creating a temporary file")?;
+    let bytes = provider.fetch_audio(track_id, &mut file)?;
+    Ok((file, bytes))
 }
 
 fn analyze(pool: &Pool, decoded: Receiver<Decoded>) -> Result<usize> {

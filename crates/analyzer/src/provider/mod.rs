@@ -1,5 +1,6 @@
 use crate::config::ProviderConfig;
 use anyhow::Result;
+use std::io::Write;
 
 pub mod subsonic;
 
@@ -20,9 +21,10 @@ pub trait Provider: Send + Sync {
     fn libraries(&self) -> Result<Vec<Library>>;
     /// A page of album ids, newest first and starting at `offset`. Empty past the end.
     fn album_ids(&self, library_id: &str, offset: usize) -> Result<Vec<String>>;
-    /// None if the provider doesn't have it anymor.
+    /// None if the provider doesn't have it anymore.
     fn album(&self, id: &str) -> Result<Option<Album>>;
-    fn fetch_audio(&self, track_id: &str) -> Result<Vec<u8>>;
+    /// Writes the audio file to `out`, returning its size.
+    fn fetch_audio(&self, track_id: &str, out: &mut dyn Write) -> Result<u64>;
 }
 
 pub struct Library {

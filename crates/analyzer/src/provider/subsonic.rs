@@ -9,6 +9,7 @@ use reqwest::{
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::{
+    io::Write,
     sync::{LazyLock, OnceLock},
     time::Duration,
 };
@@ -145,23 +146,31 @@ impl Subsonic {
         }
     }
 
-    fn download(&self, endpoint: &'static str, params: &[(&str, &str)]) -> Result<Vec<u8>> {
-        let response = Self::send(self.http.get(self.url(endpoint, params)))
+    fn download(
+        &self,
+        endpoint: &'static str,
+        params: &[(&str, &str)],
+        out: &mut dyn Write,
+    ) -> Result<u64> {
+        let mut response = Self::send(self.http.get(self.url(endpoint, params)))
             .with_context(|| format!("{endpoint} request failed"))?;
 
         let is_error = response
             .headers()
             .get(CONTENT_TYPE)
             .is_some_and(|v| v.as_bytes().starts_with(b"application/json"));
-        let body = response
-            .bytes()
-            .map_err(|e| e.without_url())
-            .with_context(|| format!("{endpoint} download failed"))?;
         if is_error {
+            let body = response
+                .bytes()
+                .map_err(|e| e.without_url())
+                .with_context(|| format!("{endpoint} download failed"))?;
             let error: Value = serde_json::from_slice(&body).unwrap_or_default();
             return Err(ApiError::new(endpoint, &error["subsonic-response"]).into());
         }
-        Ok(body.to_vec())
+        response
+            .copy_to(out)
+            .map_err(|e| e.without_url())
+            .with_context(|| format!("{endpoint} download failed"))
     }
 
     fn supports_transcoding(&self) -> Result<bool> {
@@ -187,7 +196,7 @@ impl Subsonic {
         Ok(supported)
     }
 
-    fn fetch_transcoded(&self, track_id: &str) -> Result<Vec<u8>> {
+    fn fetch_transcoded(&self, track_id: &str, out: &mut dyn Write) -> Result<u64> {
         let media = [("mediaId", track_id), ("mediaType", "song")];
         let request = self
             .http
@@ -217,10 +226,11 @@ impl Subsonic {
                 ("mediaType", "song"),
                 ("transcodeParams", &params),
             ],
+            out,
         )
     }
 
-    fn fetch_stream(&self, track_id: &str) -> Result<Vec<u8>> {
+    fn fetch_stream(&self, track_id: &str, out: &mut dyn Write) -> Result<u64> {
         let kbps = OPUS_KBPS.to_string();
         let mut params = vec![
             ("id", track_id),
@@ -230,7 +240,7 @@ impl Subsonic {
         if self.settings.format == "opus" {
             params.push(("maxBitRate", &kbps));
         }
-        self.download("stream", &params)
+        self.download("stream", &params, out)
     }
 }
 
@@ -294,11 +304,11 @@ impl Provider for Subsonic {
         Ok(Some(album.into()))
     }
 
-    fn fetch_audio(&self, track_id: &str) -> Result<Vec<u8>> {
+    fn fetch_audio(&self, track_id: &str, out: &mut dyn Write) -> Result<u64> {
         if self.supports_transcoding()? {
-            self.fetch_transcoded(track_id)
+            self.fetch_transcoded(track_id, out)
         } else {
-            self.fetch_stream(track_id)
+            self.fetch_stream(track_id, out)
         }
     }
 }

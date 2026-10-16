@@ -1,4 +1,4 @@
-use crate::audio::{BANDS, Decoder, PATCH_FRAMES, Patches};
+use crate::audio::{MEL_BANDS, MelPatches, PATCH_FRAMES, PatchExtractor};
 use anyhow::{Context, Result, anyhow, bail};
 use ort::{
     environment::Environment,
@@ -55,7 +55,7 @@ impl Model {
         };
 
         model
-            .analyze(Decoder::new().patches(&[0.0]))
+            .analyze(PatchExtractor::new().patches_from_samples(&[0.0]))
             .with_context(|| format!("test inference on {EXECUTION_PROVIDER} failed"))?;
         info!(execution_provider = EXECUTION_PROVIDER, "model loaded");
         Ok(model)
@@ -69,8 +69,8 @@ impl Model {
         &self.labels
     }
 
-    pub fn analyze(&mut self, patches: Patches) -> Result<Analysis> {
-        let count = patches.count as f32;
+    pub fn analyze(&mut self, patches: MelPatches) -> Result<Analysis> {
+        let count = patches.patch_count as f32;
         let mut embedding = Vec::new();
         let mut scores = vec![0.0f32; self.labels.len()];
         let options = RunOptions::new()?.with_outputs(
@@ -79,8 +79,8 @@ impl Model {
                 .with(PREDICTIONS),
         );
 
-        for patch in patches.data.as_chunks::<{ PATCH_FRAMES * BANDS }>().0 {
-            let input = TensorRef::from_array_view(([1, PATCH_FRAMES, BANDS], &patch[..]))?;
+        for patch in patches.values.as_chunks::<{ PATCH_FRAMES * MEL_BANDS }>().0 {
+            let input = TensorRef::from_array_view(([1, PATCH_FRAMES, MEL_BANDS], &patch[..]))?;
             let outputs = self
                 .session
                 .run_with_options(ort::inputs![INPUT => input], &options)?;
