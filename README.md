@@ -47,6 +47,7 @@ The following environment variables can be added to the compose file or to a .en
 | `DEDUP_STRATEGY` | `title+artist` | `title+artist`, `title`, `off` | Which tracks count as duplicates by title: same title and a shared artist, same title only, or none. Tracks with the same audio are always duplicates. |
 | `DEDUP_LEVEL` | `recording` | `recording`, `song` | How alike duplicates by title must sound: the same recording (remasters, edits, compilation copies), or any version of the song (also remixes, live takes). Note that `title` strategy with `song` level may also merge unrelated songs that share a common title. |
 | `MAX_DURATION_INCREASE` | no limit | percentage, e.g. `50%` | Exclude from results tracks longer than the seed by more than this (for `/path`, than the longer of the two). |
+| `MIN_SIMILARITY` | `0%` | percentage, e.g. `60%` | Leave out of `/similar` results tracks whose `similarity` is below this. In general it is **NOT** recommended to set this variable unless your library is small or you have a specific use case. |
 | `LOG_LEVEL` | `info,ort=warn` | `error`, `warn`, `info`, `debug`, `trace` or a [filter](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) | Log verbosity. |
 
 ## How it works
@@ -64,5 +65,5 @@ There are 2 main components: the analyzer and the server.
 
 The server exposes two endpoints:
 
-- `/similar` reads the nearest-neighbor index built in [step 3 of the Analyzer](#analyzer) and returns up to 100 similar tracks.
+- `/similar` reads the nearest-neighbor index built in [step 3 of the Analyzer](#analyzer) and returns up to 100 similar tracks, leaving out those below `MIN_SIMILARITY`.
 - `/path` returns a path up to N songs between two tracks using the search index built in [step 4 of the Analyzer](#analyzer). A path from song A to song B follows the neighbor links. It first finds the chain of links between A and B with the smallest steps, then evenly spaces N points along that chain and picks one track near each point, choosing them together so that every step is small and about the same size.

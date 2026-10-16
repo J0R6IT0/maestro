@@ -1,6 +1,10 @@
 use crate::store::{self, Track};
 use anyhow::Result;
-use common::{db::raw_embeddings, env, vector::raw_distance};
+use common::{
+    db::raw_embeddings,
+    env,
+    vector::{raw_distance, similarity},
+};
 use diesel::sqlite::SqliteConnection;
 use std::collections::HashMap;
 
@@ -10,6 +14,7 @@ const SAME_AUDIO: f32 = 0.011;
 pub struct Filter {
     versions: Option<(Match, Level)>,
     max_duration_increase: Option<f64>,
+    min_similarity: f32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -38,6 +43,7 @@ impl Filter {
         Ok(Self {
             versions: versions()?,
             max_duration_increase: max_duration_increase()?,
+            min_similarity: min_similarity()?,
         })
     }
 
@@ -100,7 +106,12 @@ impl Filter {
         };
 
         let distances: HashMap<i32, f32> = list.0.iter().map(|n| (n.idx, n.distance)).collect();
-        let ids: Vec<i32> = list.0.iter().map(|n| n.idx).collect();
+        let ids: Vec<i32> = list
+            .0
+            .iter()
+            .take_while(|n| similarity(n.distance) >= self.min_similarity)
+            .map(|n| n.idx)
+            .collect();
         let mut considered = (2 * n).min(ids.len());
 
         let kept = loop {
@@ -239,14 +250,28 @@ fn versions() -> Result<Option<(Match, Level)>, env::Error> {
 }
 
 fn max_duration_increase() -> Result<Option<f64>, env::Error> {
-    const NAME: &str = "MAX_DURATION_INCREASE";
-    let Some(value) = env::var(NAME) else {
+    percentage("MAX_DURATION_INCREASE", f64::INFINITY)
+}
+
+fn min_similarity() -> Result<f32, env::Error> {
+    Ok(percentage("MIN_SIMILARITY", 100.0)?.unwrap_or(0.0) as f32)
+}
+
+fn percentage(name: &'static str, max: f64) -> Result<Option<f64>, env::Error> {
+    let Some(value) = env::var(name) else {
         return Ok(None);
     };
     match value.trim().trim_end_matches('%').trim().parse::<f64>() {
-        Ok(percent) if percent >= 0.0 && percent.is_finite() => Ok(Some(percent / 100.0)),
+        Ok(percent) if percent.is_finite() && (0.0..=max).contains(&percent) => {
+            Ok(Some(percent / 100.0))
+        }
+        _ if max.is_finite() => Err(env::invalid(
+            name,
+            value,
+            format!("expected a percentage from 0 to {max}, e.g. 50 or 50%"),
+        )),
         _ => Err(env::invalid(
-            NAME,
+            name,
             value,
             "expected a percentage, e.g. 50 or 50%",
         )),
