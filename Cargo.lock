@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "analyzer"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "diesel",
@@ -1170,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "navidrome-plugin"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "extism-pdk",
  "nd-pdk",
@@ -1943,7 +1943,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "axum",
