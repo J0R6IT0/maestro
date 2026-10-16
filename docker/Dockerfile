@@ -3,7 +3,7 @@
 ARG BACKEND=cpu
 
 ARG UBUNTU_IMAGE=ubuntu:24.04
-ARG CUDA_IMAGE=nvidia/cuda:13.0.3-base-ubuntu24.04
+ARG CUDA_IMAGE=nvidia/cuda:12.9.1-base-ubuntu24.04
 
 FROM ${UBUNTU_IMAGE} AS toolchain
 
@@ -44,8 +44,8 @@ RUN curl -fsSLo /tmp/ort.tgz "$ORT_CPU_URL" \
 
 FROM ort-libs AS cuda-libs
 
-ARG ORT_CUDA_URL=https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-linux-x64-gpu_cuda13-1.31.0.tgz
-ARG ORT_CUDA_SHA256=2867dec99c6a4926e8142361b9d4d1518c16c85b854b4d41d28d65d3b2c81135
+ARG ORT_CUDA_URL=https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-linux-x64-gpu_cuda12-1.31.0.tgz
+ARG ORT_CUDA_SHA256=62d3af5269af2143b5d37494337573f1ffb8885f3ad7477ae0cb1cc79c8dedfd
 
 RUN curl -fsSLo /tmp/ort.tgz "$ORT_CUDA_URL" \
     && echo "$ORT_CUDA_SHA256  /tmp/ort.tgz" | sha256sum -c - \
@@ -120,7 +120,7 @@ FROM ${CUDA_IMAGE} AS runtime-cuda
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    libcublas-13-0=13.1.1.3-1 libcurand-13-0=10.4.0.35-1 cuda-nvrtc-13-0=13.0.88-1 libcudnn9-cuda-13=9.24.1.1-1 \
+    libcublas-12-9=12.9.2.10-1 libcurand-12-9=10.3.10.19-1 cuda-nvrtc-12-9=12.9.86-1 libcudnn9-cuda-12=9.10.2.21-1 \
     && rm -rf /var/lib/apt/lists/*
 
 FROM ${UBUNTU_IMAGE} AS runtime-openvino
