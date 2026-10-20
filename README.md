@@ -77,7 +77,7 @@ The MAEST model ([`discogs-maest-30s-pw-519l-2`](https://essentia.upf.edu/models
 ```bibtex
 @inproceedings{alonso2023,
   title={Efficient Supervised Training of Audio Transformers for Music Representation Learning},
-  author={Alonso-Jim{\'e}nez, Pablo and Serra, Xavier and Bogdanov, Dmitry},
+  author={Alonso-Jiménez, Pablo and Serra, Xavier and Bogdanov, Dmitry},
   booktitle={Conference of the International Society for Music Information Retrieval (ISMIR)},
   year={2023}
 }
