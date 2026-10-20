@@ -67,3 +67,18 @@ The server exposes two endpoints:
 
 - `/similar` reads the nearest-neighbor index built in [step 3 of the Analyzer](#analyzer) and returns up to 100 similar tracks, leaving out those below `MIN_SIMILARITY`.
 - `/path` returns a path up to N songs between two tracks using the search index built in [step 4 of the Analyzer](#analyzer). A path from song A to song B follows the neighbor links. It first finds the chain of links between A and B with the smallest steps, then evenly spaces N points along that chain and picks one track near each point, choosing them together so that every step is small and about the same size.
+
+## License
+
+maestro's source code is licensed under the [MIT License](LICENSE).
+
+The MAEST model ([`discogs-maest-30s-pw-519l-2`](https://essentia.upf.edu/models.html#maest)) is not part of the source code and is not covered by the MIT License. It is created by the [Music Technology Group](https://www.upf.edu/web/mtg) (Universitat Pompeu Fabra) and licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). The Docker images include it, unmodified, as downloaded from [Essentia](https://essentia.upf.edu/models.html), so they can't be used for commercial purposes without a [proprietary license](https://www.upf.edu/web/mtg/contact) from the MTG.
+
+```bibtex
+@inproceedings{alonso2023,
+  title={Efficient Supervised Training of Audio Transformers for Music Representation Learning},
+  author={Alonso-Jim{\'e}nez, Pablo and Serra, Xavier and Bogdanov, Dmitry},
+  booktitle={Conference of the International Society for Music Information Retrieval (ISMIR)},
+  year={2023}
+}
+```
